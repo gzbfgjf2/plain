@@ -13,7 +13,13 @@ def causal_mask(sequence_length):
     return mask
 
 
-MASK = {"causal": causal_mask}
+def no_mask(sequence_length):
+    mask = torch.ones(sequence_length, sequence_length)
+    mask = mask.view(1, 1, sequence_length, sequence_length)
+    return mask
+
+
+MASK = {"causal": causal_mask, "none": no_mask}
 
 
 def scaled_dot_product_attention(q, k, v, dropout, mask):
@@ -46,12 +52,9 @@ class AttentionLayer(nn.Module):
         self.projection = linear()
         self.attention_dropout = nn.Dropout(self.dropout)
         self.residue_dropout = nn.Dropout(self.dropout)
-        if self.mask_name:
-            self.register_buffer(
-                "mask", MASK[self.mask_name](self.sequence_length)
-            )
-        else:
-            self.mask = None
+        self.register_buffer(
+            "mask", MASK[self.mask_name](self.sequence_length)
+        )
 
     def forward(self, decoder_hs, encoder_hs):
         # batch, sequence, dimension
