@@ -24,24 +24,24 @@ def scaled_dot_product_attention(q, k, v, dropout, mask):
     return y
 
 
-def head_split(tensor, b, s, n_head, head_n_dimension):
-    return tensor.view(b, s, n_head, head_n_dimension).transpose(1, 2)
+def head_split(tensor, b, s, n_head, head_d):
+    return tensor.view(b, s, n_head, head_d).transpose(1, 2)
 
 
 class AttentionLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
-        assert config.n_dimension % config.n_head == 0
-        self.n_dimension = config.n_dimension
+        assert config.d % config.n_head == 0
+        self.d = config.d
         self.n_head = config.n_head
-        self.head_n_dimension = self.n_dimension // self.n_head
+        self.head_d = self.d // self.n_head
         self.dropout = config.dropout
         self.bias = config.bias
         self.sequence_length = config.sequence_length
         self.mask_name = config.mask_name
 
         linear = lambda: nn.Linear(
-            self.n_dimension, self.n_dimension, bias=self.bias
+            self.d, self.d, bias=self.bias
         )
         self.q = linear()
         self.k = linear()
@@ -61,7 +61,7 @@ class AttentionLayer(nn.Module):
         k = self.k(encoder_hs)
         v = self.v(encoder_hs)
 
-        args = b, s, self.n_head, self.head_n_dimension
+        args = b, s, self.n_head, self.head_d
         q = head_split(q, *args)
         k = head_split(k, *args)
         v = head_split(v, *args)
