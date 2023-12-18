@@ -6,13 +6,14 @@ import tomllib
 # https://stackoverflow.com/a/34997118/17749529
 # https://stackoverflow.com/a/15882327/17749529
 # namedtuple for immutability
-def config(path):
+def create_config(path):
     with open(path, "rb") as f:
         dictionary = tomllib.load(f)
-    return json.loads(
+    config = json.loads(
         json.dumps(dictionary),
         object_hook=lambda d: namedtuple("Config", d.keys())(*d.values()),
     )
+    return dictionary, config
 
 
 # d = {

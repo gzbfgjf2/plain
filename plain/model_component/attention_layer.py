@@ -28,6 +28,24 @@ def head_split(tensor, b, s, n_head, head_d):
     return tensor.view(b, s, n_head, head_d).transpose(1, 2)
 
 
+def attention_forward(layer, decoder_hs, encoder_hs):
+    # batch, sequence, dimension
+    (b, s, d) = decoder_hs.size()
+    q = layer.q(decoder_hs)
+    k = layer.k(encoder_hs)
+    v = layer.v(encoder_hs)
+
+    args = b, s, layer.n_head, layer.head_d
+    q = head_split(q, *args)
+    k = head_split(k, *args)
+    v = head_split(v, *args)
+
+    y = scaled_dot_product_attention(q, k, v, layer.dropout, layer.mask)
+    y = y.transpose(1, 2).contiguous().view(b, s, d)
+    y = layer.residue_dropout(layer.projection(y))
+    return y
+
+
 class AttentionLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -40,33 +58,39 @@ class AttentionLayer(nn.Module):
         self.sequence_length = config.sequence_length
         self.mask_name = config.mask_name
 
-        linear = lambda: nn.Linear(
-            self.d, self.d, bias=self.bias
-        )
+        linear = lambda: nn.Linear(self.d, self.d, bias=self.bias)
         self.q = linear()
         self.k = linear()
         self.v = linear()
         self.projection = linear()
         self.attention_dropout = nn.Dropout(self.dropout)
         self.residue_dropout = nn.Dropout(self.dropout)
-        if self.mask_name:
-            self.register_buffer(
-                "mask", globals()[self.mask_name](self.sequence_length)
-            )
+        self.mask = None
 
     def forward(self, decoder_hs, encoder_hs):
-        # batch, sequence, dimension
-        (b, s, d) = decoder_hs.size()
-        q = self.q(decoder_hs)
-        k = self.k(encoder_hs)
-        v = self.v(encoder_hs)
+        attention_forward(self, decoder_hs, encoder_hs)
 
-        args = b, s, self.n_head, self.head_d
-        q = head_split(q, *args)
-        k = head_split(k, *args)
-        v = head_split(v, *args)
 
-        y = scaled_dot_product_attention(q, k, v, self.dropout, self.mask)
-        y = y.transpose(1, 2).contiguous().view(b, s, d)
-        y = self.residue_dropout(self.projection(y))
-        return y
+class EncoderAttentionLayer(AttentionLayer):
+    def __init__(self, config):
+        super().__init__(config)
+
+    def forward(self, decoder_hs):
+        attention_forward(self, decoder_hs, decoder_hs)
+
+
+class EncoderDecoderAttentionLayer(AttentionLayer):
+    def __init__(self, config):
+        super().__init__(config)
+
+    def forward(self, encoder_hs, decoder_hs):
+        attention_forward(self, encoder_hs, decoder_hs)
+
+
+class DecoderAttentionLayer(AttentionLayer):
+    def __init__(self, config):
+        super().__init__(config)
+        self.mask = causal_mask(self.sequence_length)
+
+    def forward(self, decoder_hs):
+        attention_forward(self, decoder_hs, decoder_hs)
