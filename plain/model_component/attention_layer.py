@@ -15,8 +15,8 @@ def causal_mask(sequence_length):
 
 def scaled_dot_product_attention(q, k, v, dropout, mask):
     att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-    if mask:
-        (b, s, d) = k.size()
+    if mask is not None:
+        (b, n_head, s, d) = k.size()
         att = att.masked_fill(mask[:, :, :s, :s] == 0, float("-inf"))
     att = F.softmax(att, dim=-1)
     att = dropout(att)
@@ -40,7 +40,9 @@ def attention_forward(layer, decoder_hs, encoder_hs):
     k = head_split(k, *args)
     v = head_split(v, *args)
 
-    y = scaled_dot_product_attention(q, k, v, layer.dropout, layer.mask)
+    y = scaled_dot_product_attention(
+        q, k, v, layer.attention_dropout, layer.mask
+    )
     y = y.transpose(1, 2).contiguous().view(b, s, d)
     y = layer.residue_dropout(layer.projection(y))
     return y
@@ -56,7 +58,6 @@ class AttentionLayer(nn.Module):
         self.dropout = config.dropout
         self.bias = config.bias
         self.sequence_length = config.sequence_length
-        self.mask_name = config.mask_name
 
         linear = lambda: nn.Linear(self.d, self.d, bias=self.bias)
         self.q = linear()
@@ -65,10 +66,10 @@ class AttentionLayer(nn.Module):
         self.projection = linear()
         self.attention_dropout = nn.Dropout(self.dropout)
         self.residue_dropout = nn.Dropout(self.dropout)
-        self.mask = None
+        self.register_buffer("mask", None)
 
     def forward(self, decoder_hs, encoder_hs):
-        attention_forward(self, decoder_hs, encoder_hs)
+        return attention_forward(self, decoder_hs, encoder_hs)
 
 
 class EncoderAttentionLayer(AttentionLayer):
@@ -76,7 +77,7 @@ class EncoderAttentionLayer(AttentionLayer):
         super().__init__(config)
 
     def forward(self, decoder_hs):
-        attention_forward(self, decoder_hs, decoder_hs)
+        return attention_forward(self, decoder_hs, decoder_hs)
 
 
 class EncoderDecoderAttentionLayer(AttentionLayer):
@@ -84,7 +85,7 @@ class EncoderDecoderAttentionLayer(AttentionLayer):
         super().__init__(config)
 
     def forward(self, encoder_hs, decoder_hs):
-        attention_forward(self, encoder_hs, decoder_hs)
+        return attention_forward(self, encoder_hs, decoder_hs)
 
 
 class DecoderAttentionLayer(AttentionLayer):
@@ -93,4 +94,4 @@ class DecoderAttentionLayer(AttentionLayer):
         self.mask = causal_mask(self.sequence_length)
 
     def forward(self, decoder_hs):
-        attention_forward(self, decoder_hs, decoder_hs)
+        return attention_forward(self, decoder_hs, decoder_hs)

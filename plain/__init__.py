@@ -1,1 +1,5 @@
-from plain.model.attention import AttentionLayer
+from plain.model_component import (
+    EncoderAttentionLayer,
+    EncoderDecoderAttentionLayer,
+    DecoderAttentionLayer,
+)
