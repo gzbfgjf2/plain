@@ -28,12 +28,12 @@ def head_split(tensor, b, s, n_head, head_d):
     return tensor.view(b, s, n_head, head_d).transpose(1, 2)
 
 
-def attention_forward(layer, decoder_hs, encoder_hs):
+def attention_forward(layer, state_for_value, state_for_query):
     # batch, sequence, dimension
-    (b, s, d) = decoder_hs.size()
-    q = layer.q(decoder_hs)
-    k = layer.k(encoder_hs)
-    v = layer.v(encoder_hs)
+    (b, s, d) = state_for_query.size()
+    q = layer.q(state_for_query)
+    k = layer.k(state_for_value)
+    v = layer.v(state_for_value)
 
     args = b, s, layer.n_head, layer.head_d
     q = head_split(q, *args)
@@ -48,7 +48,7 @@ def attention_forward(layer, decoder_hs, encoder_hs):
     return y
 
 
-class AttentionLayer(nn.Module):
+class Attention(nn.Module):
     def __init__(self, config):
         super().__init__()
         assert config.d % config.n_head == 0
@@ -68,19 +68,19 @@ class AttentionLayer(nn.Module):
         self.residue_dropout = nn.Dropout(self.dropout)
         self.register_buffer("mask", None)
 
-    def forward(self, decoder_hs, encoder_hs):
-        return attention_forward(self, decoder_hs, encoder_hs)
+    def forward(self, state_for_value, state_for_query):
+        return attention_forward(self, state_for_value, state_for_query)
 
 
-class EncoderAttentionLayer(AttentionLayer):
+class SelfAttention(Attention):
     def __init__(self, config):
         super().__init__(config)
 
-    def forward(self, decoder_hs):
-        return attention_forward(self, decoder_hs, decoder_hs)
+    def forward(self, hs):
+        return attention_forward(self, hs, hs)
 
 
-class EncoderDecoderAttentionLayer(AttentionLayer):
+class EncoderDecoderAttention(Attention):
     def __init__(self, config):
         super().__init__(config)
 
@@ -88,7 +88,7 @@ class EncoderDecoderAttentionLayer(AttentionLayer):
         return attention_forward(self, encoder_hs, decoder_hs)
 
 
-class DecoderAttentionLayer(AttentionLayer):
+class CausalSelfAttention(Attention):
     def __init__(self, config):
         super().__init__(config)
         self.mask = causal_mask(self.sequence_length)
