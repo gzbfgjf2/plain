@@ -1,6 +1,7 @@
 import json
 from collections import namedtuple
 import tomllib
+from plain.train.trainer import Trainer
 
 
 # https://stackoverflow.com/a/34997118/17749529
@@ -43,8 +44,3 @@ def create_config(path):
 # c = config(d)
 # print(c.a, c.l[2].q.t)
 # print(c)
-
-
-
-def copy_weight(to_model, from_model, key_map, operation_map):
-    pass
