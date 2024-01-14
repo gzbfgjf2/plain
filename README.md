@@ -10,3 +10,6 @@ So researchers who wants to customise their models or try new ideas can just cop
 
 Minimise source code size. Trade flexibility for simpleness of source code.
 
+Researchers: change source code
+beginners: understand source code
+
