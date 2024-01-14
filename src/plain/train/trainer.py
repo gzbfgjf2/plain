@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 
 
 def iterable_to_device(iterable, device):
-    return (x.to(device) for x in iterable)
+    return tuple(x.to(device) for x in iterable)
 
 
 class Trainer:
@@ -24,6 +24,8 @@ class Trainer:
         self.optimizer = self.model.create_optimizer()
         self.state = SimpleNamespace()
         self.state.step = 0
+        self.predictions = []
+        self.labels = []
 
     def forward_backward_step(self, data):
         _, loss = self.model.training_step(data)
@@ -31,9 +33,29 @@ class Trainer:
         self.state.loss = loss / self.config.gradient_accumulation_steps
         self.state.loss.backward()
 
+    def evaluation_coroutine(self):
+        # loader = DataLoader(self.test, batch_size=None, shuffle=False)
+        loader = self.data.valuation_loader()
+        self.predictions = []
+        self.labels = []
+
+        for data in loader:
+            data = iterable_to_device(data, self.device)
+            *_, y = data
+            prediction = yield data
+            # append needs to be below yield, as last item will yield but will
+            # not receive prediciton. If not below, len(labels)-1 ==
+            # len(prediction)
+            self.labels.append(y)
+            self.predictions.append(prediction)
+        # if does not yield one more, it will break after
+        # last_item = coroutine.send()
+        # so we cannot send the last predicition
+        yield torch.empty(1)
+
     def evaluation_step(self):
         self.model.eval()
-        evaluation_coroutine = self.data.evaluation_coroutine()
+        evaluation_coroutine = self.evaluation_coroutine()
         losses = torch.zeros(self.config.eval_iters)
 
         i = 0
@@ -47,7 +69,9 @@ class Trainer:
             i += 1
             if i == self.config.eval_iters:
                 break
-        self.state.metrics = self.data.get_metrics()
+        self.state.metrics = self.data.get_metrics(
+            self.labels, self.predictions
+        )
         self.state.val_loss = round(losses.mean().item(), 4)
         self.model.train()
 

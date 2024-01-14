@@ -1,5 +1,6 @@
 import json
 from collections import namedtuple
+
 # import tomllib
 import tomli
 from plain.train.trainer import Trainer
