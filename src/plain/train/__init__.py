@@ -1,6 +1,7 @@
 import json
 from collections import namedtuple
-import tomllib
+# import tomllib
+import tomli
 from plain.train.trainer import Trainer
 
 
@@ -9,7 +10,7 @@ from plain.train.trainer import Trainer
 # namedtuple for immutability
 def create_config(path):
     with open(path, "rb") as f:
-        dictionary = tomllib.load(f)
+        dictionary = tomli.load(f)
     config = json.loads(
         json.dumps(dictionary),
         object_hook=lambda d: namedtuple("Config", d.keys())(*d.values()),
