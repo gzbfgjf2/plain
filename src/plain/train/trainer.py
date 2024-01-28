@@ -3,16 +3,19 @@ from types import SimpleNamespace
 from torch.utils.data import DataLoader
 
 
-# Data:
-#     self.data.train
-#     self.data.evaluation
-#     self.data.coroutine()
-#     self.data.get_metric
-#
+n_rjust_width = 15
 
 
 def iterable_to_device(iterable, device):
     return tuple(x.to(device) for x in iterable)
+
+
+def log_format(title, pairs):
+    message = title.rjust(n_rjust_width) + ""
+    for k, v in pairs:
+        message += k.rjust(n_rjust_width) + ": "
+        message += str(v).rjust(n_rjust_width) + " "
+    return message
 
 
 class Trainer:
@@ -38,7 +41,6 @@ class Trainer:
         loader = self.data.valuation_loader()
         self.predictions = []
         self.labels = []
-
         for data in loader:
             data = iterable_to_device(data, self.device)
             *_, y = data
@@ -53,11 +55,14 @@ class Trainer:
         # so we cannot send the last predicition
         yield torch.empty(1)
 
+    def optimize_step(self):
+        self.optimizer.step()
+        self.optimizer.zero_grad(set_to_none=True)
+
     def evaluation_step(self):
         self.model.eval()
         evaluation_coroutine = self.evaluation_coroutine()
         losses = torch.zeros(self.config.eval_iters)
-
         i = 0
         test_data = next(evaluation_coroutine)
         test_data = iterable_to_device(test_data, self.device)
@@ -75,10 +80,6 @@ class Trainer:
         self.state.val_loss = round(losses.mean().item(), 4)
         self.model.train()
 
-    def optimize_step(self):
-        self.optimizer.step()
-        self.optimizer.zero_grad(set_to_none=True)
-
     def should_optimize(self, step):
         return step % self.config.gradient_accumulation_steps == 0
 
@@ -93,22 +94,33 @@ class Trainer:
         )
 
     def optimize_step_log(self):
-        states = {}
-        keys = ["train_loss", "epoch", "step"]
+        keys = "epoch", "step", "train_loss"
+        title = "[training]"
+        pairs = []
         for k in keys:
-            states[k] = getattr(self.state, k)
-        print(states)
+            if not hasattr(self.state, k):
+                continue
+            pairs.append([k, getattr(self.state, k)])
+
+        print(log_format(title, pairs))
 
     def evaluation_step_log(self):
-        states = {}
-        keys = ["train_loss", "val_loss", "epoch", "step", "metrics"]
+        keys = ["epoch", "step", "train_loss", "val_loss", "metrics"]
+        title = "[evaluation]"
+        pairs = []
         for k in keys:
-            if hasattr(self.state, k):
-                states[k] = getattr(self.state, k)
-        print("evaluation")
-        print(states)
+            if not hasattr(self.state, k):
+                continue
+            pairs.append([k, getattr(self.state, k)])
+        print(log_format(title, pairs))
 
     def handle_save(self):
+        pass
+
+    def should_save_checkpoint(self, *args):
+        return False
+
+    def save_checkpoint(self, *args):
         pass
 
     def run(self):
@@ -128,3 +140,5 @@ class Trainer:
                 if self.should_evaluate(step):
                     self.evaluation_step()
                     self.evaluation_step_log()
+                if self.should_save_checkpoint(step):
+                    self.save_checkpoint()
