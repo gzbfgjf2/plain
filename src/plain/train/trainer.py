@@ -1,9 +1,21 @@
 import torch
 from types import SimpleNamespace
 from torch.utils.data import DataLoader
-
+import tomli
+import json
+from collections import namedtuple
 
 n_rjust_width = 15
+
+
+# def create_config(path):
+#     with open(path, "rb") as f:
+#         dictionary = tomli.load(f)
+#     config = json.loads(
+#         json.dumps(dictionary),
+#         object_hook=lambda d: namedtuple("Config", d.keys())(*d.values()),
+#     )
+#     return dictionary, config
 
 
 def iterable_to_device(iterable, device):
@@ -19,16 +31,47 @@ def log_format(title, pairs):
 
 
 class Trainer:
-    def __init__(self, config, data, model):
-        self.config = config
-        self.device = config.device
-        self.model = model.to(self.device)
-        self.data = data
+    def __init__(self, config_path, data_class, model_class):
+        self.init_config_dict(config_path)
+        self.init_config_object()
+        self.device = self.config.device
+        self.data = data_class()
+        self.init_model(model_class)
         self.optimizer = self.model.create_optimizer()
         self.state = SimpleNamespace()
         self.state.step = 0
         self.predictions = []
         self.labels = []
+
+    def init_config_dict(self, path):
+        with open(path, "rb") as f:
+            dictionary = tomli.load(f)
+        self.config_dict = dictionary
+
+    def init_config_object(self):
+        # https://stackoverflow.com/a/34997118/17749529
+        # https://stackoverflow.com/a/15882327/17749529
+        # namedtuple for immutability
+        self.config = json.loads(
+            json.dumps(self.config_dict),
+            object_hook=lambda d: namedtuple("Config", d.keys())(*d.values()),
+        )
+
+    def init_model(self, model_class):
+        # hard code the mapping instead of dynamic, to prevent injection attack
+        m = {
+            "__init__": "__init__",
+            "from_pretrained": "from_pretrained",
+            "from_checkpoint": "from_checkpoint",
+        }
+        if self.config.model_from == "__init__":
+            model = model_class(self.config)
+        else:
+            model = getattr(model_class, m[self.config.model_from])(
+                self.config
+            )
+        model = model.to(self.device)
+        self.model = model
 
     def forward_backward_step(self, data):
         _, loss = self.model.training_step(data)
