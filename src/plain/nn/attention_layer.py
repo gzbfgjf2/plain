@@ -5,10 +5,9 @@ from plain.nn.functional import (
     attention_forward,
 )
 
+
 # reference: https://github.com/karpathy/nanoGPT
-
-
-class Attention(nn.Module):
+class AttentionIngredient(nn.Module):
     def __init__(self, config):
         super().__init__()
         assert config.d % config.n_head == 0
@@ -18,7 +17,6 @@ class Attention(nn.Module):
         self.dropout = config.dropout
         self.bias = config.bias
         self.sequence_length = config.sequence_length
-
         linear = lambda: nn.Linear(self.d, self.d, bias=self.bias)
         self.q = linear()
         self.k = linear()
@@ -28,11 +26,16 @@ class Attention(nn.Module):
         self.residue_dropout = nn.Dropout(self.dropout)
         self.register_buffer("mask", None)
 
+
+class Attention(AttentionIngredient):
+    def __init__(self, config):
+        super().__init__(config)
+
     def forward(self, state_for_value, state_for_query):
         return attention_forward(self, state_for_value, state_for_query)
 
 
-class SelfAttention(Attention):
+class SelfAttention(AttentionIngredient):
     def __init__(self, config):
         super().__init__(config)
 
@@ -40,7 +43,7 @@ class SelfAttention(Attention):
         return attention_forward(self, hs, hs)
 
 
-class EncoderDecoderAttention(Attention):
+class EncoderDecoderAttention(AttentionIngredient):
     def __init__(self, config):
         super().__init__(config)
 
@@ -48,7 +51,7 @@ class EncoderDecoderAttention(Attention):
         return attention_forward(self, encoder_hs, decoder_hs)
 
 
-class CausalSelfAttention(Attention):
+class CausalSelfAttention(AttentionIngredient):
     def __init__(self, config):
         super().__init__(config)
         self.mask = causal_mask(self.sequence_length)
