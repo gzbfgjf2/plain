@@ -1,4 +1,4 @@
-from plain.train.trainer import Trainer
+from plain.train.trainer import Trainer, load_config_dict, init_config_object
 
 
 # d = {

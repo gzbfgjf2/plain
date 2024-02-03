@@ -30,10 +30,25 @@ def log_format(title, pairs):
     return message
 
 
+def load_config_dict(path):
+    with open(path, "rb") as f:
+        return tomli.load(f)
+
+
+def init_config_object(config_dict):
+    # https://stackoverflow.com/a/34997118/17749529
+    # https://stackoverflow.com/a/15882327/17749529
+    # namedtuple for immutability
+    return json.loads(
+        json.dumps(config_dict),
+        object_hook=lambda d: namedtuple("Config", d.keys())(*d.values()),
+    )
+
+
 class Trainer:
-    def __init__(self, config_path, data_class, model_class):
-        self.init_config_dict(config_path)
-        self.init_config_object()
+    def __init__(self, config_dict, data_class, model_class):
+        self.config_dict = config_dict
+        self.config = init_config_object(self.config_dict)
         self.device = self.config.device
         self.data = data_class()
         self.init_model(model_class)
@@ -42,20 +57,6 @@ class Trainer:
         self.state.step = 0
         self.predictions = []
         self.labels = []
-
-    def init_config_dict(self, path):
-        with open(path, "rb") as f:
-            dictionary = tomli.load(f)
-        self.config_dict = dictionary
-
-    def init_config_object(self):
-        # https://stackoverflow.com/a/34997118/17749529
-        # https://stackoverflow.com/a/15882327/17749529
-        # namedtuple for immutability
-        self.config = json.loads(
-            json.dumps(self.config_dict),
-            object_hook=lambda d: namedtuple("Config", d.keys())(*d.values()),
-        )
 
     def init_model(self, model_class):
         # hard code the mapping instead of dynamic, to prevent injection attack
