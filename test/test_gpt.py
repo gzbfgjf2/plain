@@ -4,7 +4,7 @@ from plain.train import load_config_dict, init_config_object
 import torch
 
 
-class TestGPT(unittest.TestCase):
+class TestGpt(unittest.TestCase):
     def test_model_initialization(self):
         config_path = "./test/config/test_gpt.toml"
         config_dict = load_config_dict(config_path)
