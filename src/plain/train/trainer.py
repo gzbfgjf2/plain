@@ -5,8 +5,9 @@ import tomli
 import json
 from collections import namedtuple
 from pathlib import Path
+import os
 
-n_rjust_width = 15
+n_rjust_width = 20
 
 
 # def create_config(path):
@@ -23,12 +24,21 @@ def iterable_to_device(iterable, device):
     return tuple(x.to(device) for x in iterable)
 
 
-def log_format(title, pairs):
-    message = title.rjust(n_rjust_width) + ""
-    for k, v in pairs:
-        message += k.rjust(n_rjust_width) + ": "
-        message += str(v).rjust(n_rjust_width) + " "
-    return message
+class StateLog:
+    def __init__(self):
+        self.previous_keys = None
+
+    def log(self, keys, vals):
+        vals = "".join([f"{v}".rjust(n_rjust_width) for v in vals])
+        if keys == self.previous_keys:
+            print(vals)
+            return
+        self.previous_keys = keys
+        keys = "".join([k.rjust(n_rjust_width) for k in keys])
+        print(f"\n{keys}\n{vals}")
+
+
+state_log = StateLog()
 
 
 def load_config_dict(path):
@@ -48,15 +58,16 @@ def init_config_object(config_dict):
 
 class Trainer:
     def __init__(self, config_dict, data_class, model_class):
+        self.state = SimpleNamespace()
+        self.state.step = 0
+        self.state.epoch = 0
+        self.state.optimization_step = 0
+        self.state.best_save_metric = -float("inf")
         self.config_dict = config_dict
         self.config = init_config_object(self.config_dict)
         self.device = self.config.device
         self.data = data_class()
         self.init_model(model_class)
-        self.optimizer = self.model.create_optimizer()
-        self.state = SimpleNamespace()
-        self.state.step = 0
-        self.state.best_metric = 0
 
     def init_model(self, model_class):
         # hard code the mapping instead of dynamic, to prevent injection attack
@@ -67,10 +78,27 @@ class Trainer:
         }
         if self.config.model_from == "__init__":
             model = model_class(self.config)
-        else:
+        elif self.config.model_from == "from_checkpoint":
+            checkpoint_path = Path("checkpoint") / (
+                self.config.experiment_name + ".ckpt"
+            )
+            checkpoint = torch.load(
+                checkpoint_path, map_location=self.config.device
+            )
+
+            model = model_class.from_checkpoint(self.config, checkpoint)
+            self.state = checkpoint["state"]
+            print(
+                f"loading checkpoint... \nprevious best metric:\n{self.state.best_save_metric}"
+            )
+            # assert self.config_dict == checkpoint["config_dict"]
+        elif self.config.model_from == "from_pretrained":
             model = getattr(model_class, m[self.config.model_from])(
                 self.config
             )
+        else:
+            assert False, f"{self.config.model_from} not implemented"
+
         model = model.to(self.device)
         self.model = model
 
@@ -100,8 +128,9 @@ class Trainer:
         yield torch.empty(1)
 
     def optimize_step(self):
-        self.optimizer.step()
-        self.optimizer.zero_grad(set_to_none=True)
+        self.model.optimizer.step()
+        self.model.optimizer.zero_grad(set_to_none=True)
+        self.state.optimization_step += 1
 
     def evaluation_step(self):
         self.model.eval()
@@ -118,57 +147,60 @@ class Trainer:
             i += 1
             if i == self.config.eval_iters:
                 break
-        self.state.eval_metric = self.data.get_metrics(
+        self.state.metric = self.data.get_metrics(
             self.state.eval_labels, self.state.eval_predictions
         )
         self.state.eval_loss = round(losses.mean().item(), 4)
+        self.handle_save_metric()
         self.model.train()
 
-    def should_optimize(self, step):
-        return step % self.config.gradient_accumulation_steps == 0
+    def handle_save_metric(self):
+        self.state.save_metric = -self.state.eval_loss
 
-    def should_evaluate(self, step):
-        return (
-            step
-            % (
-                self.config.eval_iters
-                * self.config.gradient_accumulation_steps
-            )
-            == 0
-        )
+    def should_optimize(self):
+        return (self.state.step) % self.config.gradient_accumulation_steps == 0
+
+    def should_evaluate(self):
+        return (self.state.optimization_step) % self.config.eval_interval == 0
 
     def optimize_step_log(self):
-        keys = "epoch", "step", "train_loss"
-        title = "[training]"
-        pairs = []
-        for k in keys:
+        keys = "mode", "epoch", "optimization_step", "train_loss"
+        vals = ["optimization"]
+        for k in keys[1:]:
             if not hasattr(self.state, k):
-                continue
-            pairs.append([k, getattr(self.state, k)])
+                assert False, f"{k} not in self.state"
+            vals.append(getattr(self.state, k))
 
-        print(log_format(title, pairs))
+        state_log.log(keys, vals)
 
     def evaluation_step_log(self):
-        keys = ["epoch", "step", "train_loss", "eval_loss", "eval_metric"]
-        title = "[evaluation]"
-        pairs = []
-        for k in keys:
+        keys = [
+            "mode",
+            "epoch",
+            "optimization_step",
+            "eval_loss",
+            "metric",
+        ]
+        vals = ["evaluation"]
+        for k in keys[1:]:
             if not hasattr(self.state, k):
-                continue
-            pairs.append([k, getattr(self.state, k)])
-        print(log_format(title, pairs))
+                assert False, f"{k} not in self.state"
+            vals.append(getattr(self.state, k))
+        state_log.log(keys, vals)
 
     def should_save_checkpoint(self, *args):
-        if self.state.best_metric < self.state.eval_metric:
-            self.state.best_metric = self.state.eval_metric
-            print(f"new best metric: {self.state.best_metric}")
-            return True
-        return False
+        if self.state.best_save_metric >= self.state.save_metric:
+            return False
+        self.state.best_save_metric = self.state.save_metric
+        print(
+            f"new best metric: {self.state.best_save_metric}, save checkpoint..."
+        )
+        return True
 
     def save_checkpoint(self, *args):
         checkpoint = {
             "model": self.model.state_dict(),
-            "optimizer": self.optimizer.state_dict(),
+            "optimizer": self.model.optimizer.state_dict(),
             "config_dict": self.config_dict,
             "state": self.state,
         }
@@ -180,21 +212,36 @@ class Trainer:
         torch.save(checkpoint, checkpoint_path)
 
     def run(self):
-        self.metric = self.evaluation_step()
+        self.evaluation_step()
         self.evaluation_step_log()
         # loader = DataLoader(self.data.train, batch_size=None, shuffle=True)
         loader = self.data.train_loader()
         for epoch in range(self.config.epoch):
             self.state.epoch = epoch
             for step, data in enumerate(loader):
-                data = iterable_to_device(data, self.device)
-                self.forward_backward_step(data)
-                if self.should_optimize(step):
-                    self.optimize_step()
-                    self.optimize_step_log()
-                    self.state.step += 1
-                if self.should_evaluate(step):
-                    self.evaluation_step()
-                    self.evaluation_step_log()
-                    if self.should_save_checkpoint():
-                        self.save_checkpoint()
+                # looks ugly but the logic is very easy to read
+                self.state.step = step + 1
+                self.do_step(data)
+                if self.should_optimize():
+                    self.do_optimization()
+                    if self.should_evaluate():
+                        self.do_evaluation()
+                        if self.should_save_checkpoint():
+                            self.save_checkpoint()
+
+            self.do_optimization()
+            self.do_evaluation()
+            if self.should_save_checkpoint():
+                self.save_checkpoint()
+
+    def do_step(self, data):
+        data = iterable_to_device(data, self.device)
+        self.forward_backward_step(data)
+
+    def do_optimization(self):
+        self.optimize_step()
+        self.optimize_step_log()
+
+    def do_evaluation(self):
+        self.evaluation_step()
+        self.evaluation_step_log()
