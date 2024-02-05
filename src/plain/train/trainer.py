@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader
 import tomli
 import json
 from collections import namedtuple
+from pathlib import Path
 
 n_rjust_width = 15
 
@@ -55,8 +56,7 @@ class Trainer:
         self.optimizer = self.model.create_optimizer()
         self.state = SimpleNamespace()
         self.state.step = 0
-        self.predictions = []
-        self.labels = []
+        self.state.best_metric = 0
 
     def init_model(self, model_class):
         # hard code the mapping instead of dynamic, to prevent injection attack
@@ -83,8 +83,8 @@ class Trainer:
     def evaluation_coroutine(self):
         # loader = DataLoader(self.test, batch_size=None, shuffle=False)
         loader = self.data.valuation_loader()
-        self.predictions = []
-        self.labels = []
+        self.state.eval_predictions = []
+        self.state.eval_labels = []
         for data in loader:
             data = iterable_to_device(data, self.device)
             *_, y = data
@@ -92,8 +92,8 @@ class Trainer:
             # append needs to be below yield, as last item will yield but will
             # not receive prediciton. If not below, len(labels)-1 ==
             # len(prediction)
-            self.labels.append(y)
-            self.predictions.append(prediction)
+            self.state.eval_labels.append(y)
+            self.state.eval_predictions.append(prediction)
         # if does not yield one more, it will break after
         # last_item = coroutine.send()
         # so we cannot send the last predicition
@@ -118,10 +118,10 @@ class Trainer:
             i += 1
             if i == self.config.eval_iters:
                 break
-        self.state.metrics = self.data.get_metrics(
-            self.labels, self.predictions
+        self.state.eval_metric = self.data.get_metrics(
+            self.state.eval_labels, self.state.eval_predictions
         )
-        self.state.val_loss = round(losses.mean().item(), 4)
+        self.state.eval_loss = round(losses.mean().item(), 4)
         self.model.train()
 
     def should_optimize(self, step):
@@ -149,7 +149,7 @@ class Trainer:
         print(log_format(title, pairs))
 
     def evaluation_step_log(self):
-        keys = ["epoch", "step", "train_loss", "val_loss", "metrics"]
+        keys = ["epoch", "step", "train_loss", "eval_loss", "eval_metric"]
         title = "[evaluation]"
         pairs = []
         for k in keys:
@@ -158,14 +158,26 @@ class Trainer:
             pairs.append([k, getattr(self.state, k)])
         print(log_format(title, pairs))
 
-    def handle_save(self):
-        pass
-
     def should_save_checkpoint(self, *args):
+        if self.state.best_metric < self.state.eval_metric:
+            self.state.best_metric = self.state.eval_metric
+            print(f"new best metric: {self.state.best_metric}")
+            return True
         return False
 
     def save_checkpoint(self, *args):
-        pass
+        checkpoint = {
+            "model": self.model.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
+            "config_dict": self.config_dict,
+            "state": self.state,
+        }
+
+        checkpoint_path = Path("checkpoint") / (
+            self.config.experiment_name + ".ckpt"
+        )
+        print(f"saving checkpoint to {checkpoint_path}")
+        torch.save(checkpoint, checkpoint_path)
 
     def run(self):
         self.metric = self.evaluation_step()
@@ -184,5 +196,5 @@ class Trainer:
                 if self.should_evaluate(step):
                     self.evaluation_step()
                     self.evaluation_step_log()
-                if self.should_save_checkpoint(step):
-                    self.save_checkpoint()
+                    if self.should_save_checkpoint():
+                        self.save_checkpoint()
