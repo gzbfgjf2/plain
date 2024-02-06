@@ -60,7 +60,7 @@ class Trainer:
         self.config_dict = config_dict
         self.config = init_config_object(self.config_dict)
         self.device = self.config.device
-        self.data = data_class()
+        self.data = data_class(self.config)
         self.init_model(model_class)
 
     def init_model(self, model_class):
