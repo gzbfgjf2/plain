@@ -62,6 +62,9 @@ class Trainer:
         self.device = self.config.device
         self.data = data_class(self.config)
         self.init_model(model_class)
+        self.optimizer = self.model.create_optimizer()
+        if self.config.model_from == "from_checkpoint":
+            self.optimizer.load_state_dict(self.checkpoint["optimizer"])
 
     def init_model(self, model_class):
         # hard code the mapping instead of dynamic, to prevent injection attack
@@ -76,12 +79,13 @@ class Trainer:
             checkpoint_path = Path("checkpoint") / (
                 self.config.experiment_name + ".ckpt"
             )
-            checkpoint = torch.load(
+            self.checkpoint = torch.load(
                 checkpoint_path, map_location=self.config.device
             )
 
-            model = model_class.from_checkpoint(self.config, checkpoint)
-            self.state = checkpoint["state"]
+            model = model_class.from_checkpoint(self.config, self.checkpoint)
+
+            self.state = self.checkpoint["state"]
             print(
                 f"loading checkpoint... \nprevious best metric:\n{self.state.best_save_metric}"
             )
@@ -122,8 +126,8 @@ class Trainer:
         yield torch.empty(1)
 
     def optimize_step(self):
-        self.model.optimizer.step()
-        self.model.optimizer.zero_grad(set_to_none=True)
+        self.optimizer.step()
+        self.optimizer.zero_grad(set_to_none=True)
         self.state.optimization_step += 1
 
     def evaluation_step(self):
