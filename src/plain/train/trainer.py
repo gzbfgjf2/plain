@@ -10,16 +10,6 @@ import os
 n_rjust_width = 20
 
 
-# def create_config(path):
-#     with open(path, "rb") as f:
-#         dictionary = tomli.load(f)
-#     config = json.loads(
-#         json.dumps(dictionary),
-#         object_hook=lambda d: namedtuple("Config", d.keys())(*d.values()),
-#     )
-#     return dictionary, config
-
-
 def iterable_to_device(iterable, device):
     return tuple(x.to(device) for x in iterable)
 
@@ -39,6 +29,10 @@ class StateLog:
 
 
 state_log = StateLog()
+
+
+def pretty_tokens(batch):
+    print([[x.rjust(15) for x in sequence] for sequence in batch])
 
 
 def load_config_dict(path):
@@ -140,7 +134,7 @@ class Trainer:
         test_data = next(evaluation_coroutine)
         test_data = iterable_to_device(test_data, self.device)
         while True:
-            ids, eval_loss = self.model.evaluation_step(test_data)
+            ids, logits, eval_loss = self.model.evaluation_step(test_data)
             losses[i] = eval_loss
             test_data = evaluation_coroutine.send(ids)
             test_data = iterable_to_device(test_data, self.device)
@@ -152,6 +146,14 @@ class Trainer:
         )
         self.state.eval_loss = round(losses.mean().item(), 4)
         self.handle_save_metric()
+
+        print_n = 5
+        labels = self.state.eval_labels[:print_n]
+        predictions = self.state.eval_predictions[:print_n]
+        for label, prediction in zip(labels, predictions):
+            pretty_tokens(self.data.decode(label))
+            pretty_tokens(self.data.decode(prediction))
+
         self.model.train()
 
     def handle_save_metric(self):
