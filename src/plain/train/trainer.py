@@ -63,8 +63,8 @@ class Trainer:
         self.data = data_class(self.config)
         self.init_model(model_class)
         self.optimizer = self.model.create_optimizer()
-        if self.config.model_from == "from_checkpoint":
-            self.optimizer.load_state_dict(self.checkpoint["optimizer"])
+        #if self.config.model_from == "from_checkpoint":
+        #    self.optimizer.load_state_dict(self.checkpoint["optimizer"])
 
     def init_model(self, model_class):
         # hard code the mapping instead of dynamic, to prevent injection attack
@@ -137,10 +137,12 @@ class Trainer:
         i = 0
         test_data = next(evaluation_coroutine)
         test_data = iterable_to_device(test_data, self.device)
+        self.state.evaluation_samples = []
         while True:
             ids, logits, eval_loss = self.model.evaluation_step(test_data)
             losses[i] = eval_loss
-            test_data = evaluation_coroutine.send(ids)
+            test_data = evaluation_coroutine.send(logits)
+            self.state.evaluation_samples.append(ids)
             test_data = iterable_to_device(test_data, self.device)
             i += 1
             if i == self.config.eval_iters:
@@ -151,13 +153,7 @@ class Trainer:
         self.state.eval_loss = round(losses.mean().item(), 4)
         self.handle_save_metric()
 
-        print_n = 5
-        labels = self.state.eval_labels[:print_n]
-        predictions = self.state.eval_predictions[:print_n]
-        for label, prediction in zip(labels, predictions):
-            pretty_tokens(self.data.decode(label))
-            pretty_tokens(self.data.decode(prediction))
-
+        print(' '.join(self.data.decode(self.state.evaluation_samples[0])[0][:30]))
         self.model.train()
 
     def handle_save_metric(self):
@@ -206,7 +202,7 @@ class Trainer:
     def save_checkpoint(self, *args):
         checkpoint = {
             "model": self.model.state_dict(),
-            "optimizer": self.model.optimizer.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
             "config_dict": self.config_dict,
             "state": self.state,
         }
