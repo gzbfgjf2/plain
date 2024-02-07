@@ -150,7 +150,7 @@ class Trainer:
 
     def evaluation_step(self):
         self.model.eval()
-        loader = DataLoader(self.data.train, batch_size=None, shuffle=True)
+        loader = self.data.valuation_loader()
         losses = torch.zeros(self.config.eval_iters)
         self.state.eval_predictions = []
         self.state.eval_labels = []
