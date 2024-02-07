@@ -52,53 +52,49 @@ def init_config_object(config_dict):
 
 class Trainer:
     def __init__(self, config_dict, data_class, model_class):
+        self.config_dict = config_dict
+        self.config = init_config_object(self.config_dict)
+        self.device = self.config.device
+        self.load_checkpoint()
+        self.init_state()
+        self.data = data_class(self.config)
+        self.model_class = model_class
+        self.init_model()
+        self.init_optimizer()
+
+    def load_checkpoint(self):
+        if not self.config.init_from == "checkpoint":
+            return
+        checkpoint_path = Path("checkpoint") / (
+            self.config.experiment_name + ".ckpt"
+        )
+        self.checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        print(self.checkpoint.keys())
+
+    def init_state(self):
         self.state = SimpleNamespace()
+        if self.config.init_from == "checkpoint":
+            self.state = self.checkpoint["state"]
+            return
         self.state.step = 0
         self.state.epoch = 0
         self.state.optimization_step = 0
         self.state.best_save_metric = -float("inf")
-        self.config_dict = config_dict
-        self.config = init_config_object(self.config_dict)
-        self.device = self.config.device
-        self.data = data_class(self.config)
-        self.init_model(model_class)
+
+    def init_model(self):
+        model = self.model_class(self.config)
+        if self.config.init_from == "pretrained":
+            model.copy_pretrained()
+        elif self.config.init_from == "checkpoint":
+            model.load_checkpoint(self.checkpoint["model"])
+        self.model = model.to(self.device)
+        if self.config.freeze:
+            self.model.freeze()
+
+    def init_optimizer(self):
         self.optimizer = self.model.create_optimizer()
-        #if self.config.model_from == "from_checkpoint":
-        #    self.optimizer.load_state_dict(self.checkpoint["optimizer"])
-
-    def init_model(self, model_class):
-        # hard code the mapping instead of dynamic, to prevent injection attack
-        m = {
-            "__init__": "__init__",
-            "from_pretrained": "from_pretrained",
-            "from_checkpoint": "from_checkpoint",
-        }
-        if self.config.model_from == "__init__":
-            model = model_class(self.config)
-        elif self.config.model_from == "from_checkpoint":
-            checkpoint_path = Path("checkpoint") / (
-                self.config.experiment_name + ".ckpt"
-            )
-            self.checkpoint = torch.load(
-                checkpoint_path, map_location=self.config.device
-            )
-
-            model = model_class.from_checkpoint(self.config, self.checkpoint)
-
-            self.state = self.checkpoint["state"]
-            print(
-                f"loading checkpoint... \nprevious best metric:\n{self.state.best_save_metric}"
-            )
-            # assert self.config_dict == checkpoint["config_dict"]
-        elif self.config.model_from == "from_pretrained":
-            model = getattr(model_class, m[self.config.model_from])(
-                self.config
-            )
-        else:
-            assert False, f"{self.config.model_from} not implemented"
-
-        model = model.to(self.device)
-        self.model = model
+        if self.config.init_from == "pretrained":
+            self.optimizer.load_state_dict(self.checkpoint["optimizer"])
 
     def forward_backward_step(self, data):
         _, loss = self.model.training_step(data)
@@ -106,55 +102,24 @@ class Trainer:
         self.state.loss = loss / self.config.gradient_accumulation_steps
         self.state.loss.backward()
 
-    def evaluation_coroutine(self):
-        # loader = DataLoader(self.test, batch_size=None, shuffle=False)
-        loader = self.data.valuation_loader()
-        self.state.eval_predictions = []
-        self.state.eval_labels = []
-        for data in loader:
-            data = iterable_to_device(data, self.device)
-            *_, y = data
-            prediction = yield data
-            # append needs to be below yield, as last item will yield but will
-            # not receive prediciton. If not below, len(labels)-1 ==
-            # len(prediction)
-            self.state.eval_labels.append(y)
-            self.state.eval_predictions.append(prediction)
-        # if does not yield one more, it will break after
-        # last_item = coroutine.send()
-        # so we cannot send the last predicition
-        yield torch.empty(1)
-
-    def optimize_step(self):
-        self.optimizer.step()
-        self.optimizer.zero_grad(set_to_none=True)
-        self.state.optimization_step += 1
-
-    def evaluation_step(self):
-        self.model.eval()
-        evaluation_coroutine = self.evaluation_coroutine()
-        losses = torch.zeros(self.config.eval_iters)
-        i = 0
-        test_data = next(evaluation_coroutine)
-        test_data = iterable_to_device(test_data, self.device)
-        self.state.evaluation_samples = []
-        while True:
-            ids, logits, eval_loss = self.model.evaluation_step(test_data)
-            losses[i] = eval_loss
-            test_data = evaluation_coroutine.send(logits)
-            self.state.evaluation_samples.append(ids)
-            test_data = iterable_to_device(test_data, self.device)
-            i += 1
-            if i == self.config.eval_iters:
-                break
-        self.state.metric = self.data.get_metrics(
-            self.state.eval_labels, self.state.eval_predictions
-        )
-        self.state.eval_loss = round(losses.mean().item(), 4)
-        self.handle_save_metric()
-
-        print(' '.join(self.data.decode(self.state.evaluation_samples[0])[0][:30]))
-        self.model.train()
+    # def evaluation_coroutine(self):
+    #     # loader = DataLoader(self.test, batch_size=None, shuffle=False)
+    #     loader = self.data.valuation_loader()
+    #     self.state.eval_predictions = []
+    #     self.state.eval_labels = []
+    #     for data in loader:
+    #         data = iterable_to_device(data, self.device)
+    #         *_, y = data
+    #         prediction = yield data
+    #         # append needs to be below yield, as last item will yield but will
+    #         # not receive prediciton. If not below, len(labels)-1 ==
+    #         # len(prediction)
+    #         self.state.eval_labels.append(y)
+    #         self.state.eval_predictions.append(prediction)
+    #     # if does not yield one more, it will break after
+    #     # last_item = coroutine.send()
+    #     # so we cannot send the last predicition
+    #     yield torch.empty(1)
 
     def handle_save_metric(self):
         self.state.save_metric = -self.state.eval_loss
@@ -162,8 +127,10 @@ class Trainer:
     def should_optimize(self):
         return (self.state.step) % self.config.gradient_accumulation_steps == 0
 
-    def should_evaluate(self):
-        return (self.state.optimization_step) % self.config.eval_interval == 0
+    def optimize_step(self):
+        self.optimizer.step()
+        self.optimizer.zero_grad(set_to_none=True)
+        self.state.optimization_step += 1
 
     def optimize_step_log(self):
         keys = "mode", "epoch", "optimization_step", "train_loss"
@@ -172,8 +139,36 @@ class Trainer:
             if not hasattr(self.state, k):
                 assert False, f"{k} not in self.state"
             vals.append(getattr(self.state, k))
-
         state_log.log(keys, vals)
+
+    def do_optimization(self):
+        self.optimize_step()
+        self.optimize_step_log()
+
+    def should_evaluate(self):
+        return (self.state.optimization_step) % self.config.eval_interval == 0
+
+    def evaluation_step(self):
+        self.model.eval()
+        loader = DataLoader(self.data.train, batch_size=None, shuffle=True)
+        losses = torch.zeros(self.config.eval_iters)
+        self.state.eval_predictions = []
+        self.state.eval_labels = []
+        for i, data in enumerate(loader):
+            data = iterable_to_device(data, self.device)
+            prediction, eval_loss = self.model.evaluation_step(data)
+            losses[i] = eval_loss
+            *_, label = data
+            self.state.eval_labels.append(label)
+            self.state.eval_predictions.append(prediction)
+            if i == self.config.eval_iters - 1:
+                break
+        self.state.metric = self.data.get_metrics(
+            self.state.eval_labels, self.state.eval_predictions
+        )
+        self.state.eval_loss = round(losses.mean().item(), 4)
+        self.handle_save_metric()
+        self.model.train()
 
     def evaluation_step_log(self):
         keys = [
@@ -190,6 +185,10 @@ class Trainer:
             vals.append(getattr(self.state, k))
         state_log.log(keys, vals)
 
+    def do_evaluation(self):
+        self.evaluation_step()
+        self.evaluation_step_log()
+
     def should_save_checkpoint(self, *args):
         if self.state.best_save_metric >= self.state.save_metric:
             return False
@@ -203,7 +202,6 @@ class Trainer:
         checkpoint = {
             "model": self.model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
-            "config_dict": self.config_dict,
             "state": self.state,
         }
 
@@ -239,11 +237,3 @@ class Trainer:
     def do_step(self, data):
         data = iterable_to_device(data, self.device)
         self.forward_backward_step(data)
-
-    def do_optimization(self):
-        self.optimize_step()
-        self.optimize_step_log()
-
-    def do_evaluation(self):
-        self.evaluation_step()
-        self.evaluation_step_log()
