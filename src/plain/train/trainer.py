@@ -10,10 +10,6 @@ import os
 n_rjust_width = 20
 
 
-def iterable_to_device(iterable, device):
-    return tuple(x.to(device) for x in iterable)
-
-
 class StateLog:
     def __init__(self):
         self.previous_keys = None
@@ -62,6 +58,10 @@ class Trainer:
         self.init_model()
         self.init_optimizer()
 
+    @staticmethod
+    def iterable_to_device(iterable, device):
+        return tuple(x.to(device) for x in iterable)
+
     def load_checkpoint(self):
         if not self.config.init_from == "checkpoint":
             return
@@ -102,25 +102,6 @@ class Trainer:
         self.state.loss = loss / self.config.gradient_accumulation_steps
         self.state.loss.backward()
 
-    # def evaluation_coroutine(self):
-    #     # loader = DataLoader(self.test, batch_size=None, shuffle=False)
-    #     loader = self.data.valuation_loader()
-    #     self.state.eval_predictions = []
-    #     self.state.eval_labels = []
-    #     for data in loader:
-    #         data = iterable_to_device(data, self.device)
-    #         *_, y = data
-    #         prediction = yield data
-    #         # append needs to be below yield, as last item will yield but will
-    #         # not receive prediciton. If not below, len(labels)-1 ==
-    #         # len(prediction)
-    #         self.state.eval_labels.append(y)
-    #         self.state.eval_predictions.append(prediction)
-    #     # if does not yield one more, it will break after
-    #     # last_item = coroutine.send()
-    #     # so we cannot send the last predicition
-    #     yield torch.empty(1)
-
     def handle_save_metric(self):
         self.state.save_metric = -self.state.eval_loss
 
@@ -148,6 +129,25 @@ class Trainer:
     def should_evaluate(self):
         return (self.state.optimization_step) % self.config.eval_interval == 0
 
+    @torch.no_grad()
+    def sample(self):
+        self.model.eval()
+        loader = self.data.valuation_loader()
+        for i, data in enumerate(loader):
+            data = self.iterable_to_device(data, self.device)
+            input, output = data
+            prediction = self.model.sample(input)
+            print("input")
+            print(self.data.decode(input))
+            print("expected output")
+            print(self.data.decode(output))
+            print("real output")
+            print(self.data.decode(prediction))
+            if i == self.config.eval_iters - 1:
+                break
+        self.model.train()
+
+    @torch.no_grad()
     def evaluation_step(self):
         self.model.eval()
         loader = self.data.valuation_loader()
@@ -155,7 +155,7 @@ class Trainer:
         self.state.eval_predictions = []
         self.state.eval_labels = []
         for i, data in enumerate(loader):
-            data = iterable_to_device(data, self.device)
+            data = self.iterable_to_device(data, self.device)
             prediction, eval_loss = self.model.evaluation_step(data)
             losses[i] = eval_loss
             *_, label = data
@@ -188,6 +188,7 @@ class Trainer:
     def do_evaluation(self):
         self.evaluation_step()
         self.evaluation_step_log()
+        self.sample()
 
     def should_save_checkpoint(self, *args):
         if self.state.best_save_metric >= self.state.save_metric:
@@ -235,5 +236,5 @@ class Trainer:
                 self.save_checkpoint()
 
     def do_step(self, data):
-        data = iterable_to_device(data, self.device)
+        data = self.iterable_to_device(data, self.device)
         self.forward_backward_step(data)
