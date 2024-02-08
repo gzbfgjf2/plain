@@ -215,6 +215,7 @@ class Trainer:
     def run(self):
         self.evaluation_step()
         self.evaluation_step_log()
+        self.sample()
         # loader = DataLoader(self.data.train, batch_size=None, shuffle=True)
         loader = self.data.train_loader()
         for epoch in range(self.config.epoch):
