@@ -143,7 +143,7 @@ class Trainer:
             print(self.data.decode(output))
             print("real output")
             print(self.data.decode(prediction))
-            if i == self.config.eval_iters - 1:
+            if i == self.config.n_sample:
                 break
         self.model.train()
 
