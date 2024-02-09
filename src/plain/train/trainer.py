@@ -7,7 +7,7 @@ from collections import namedtuple
 from pathlib import Path
 import os
 
-n_rjust_width = 20
+RJUST_WIDTH = 20
 
 
 class StateLog:
@@ -15,12 +15,12 @@ class StateLog:
         self.previous_keys = None
 
     def log(self, keys, vals):
-        vals = "".join([f"{v}".rjust(n_rjust_width) for v in vals])
+        vals = "".join([f"{v}".rjust(RJUST_WIDTH) for v in vals])
         if keys == self.previous_keys:
             print(vals)
             return
         self.previous_keys = keys
-        keys = "".join([k.rjust(n_rjust_width) for k in keys])
+        keys = "".join([k.rjust(RJUST_WIDTH) for k in keys])
         print(f"\n{keys}\n{vals}")
 
 
@@ -57,6 +57,29 @@ class Trainer:
         self.model_class = model_class
         self.init_model()
         self.init_optimizer()
+
+    def run(self):
+        self.evaluation_step()
+        self.evaluation_step_log()
+        self.sample()
+        loader = self.data.train_loader()
+        for epoch in range(self.config.epoch):
+            self.state.epoch = epoch
+            for step, data in enumerate(loader):
+                # looks ugly but the logic is very easy to read
+                self.state.step = step + 1
+                self.do_forward_backward_step(data)
+                if self.should_optimize():
+                    self.do_optimization()
+                    if self.should_evaluate():
+                        self.do_evaluation()
+                        if self.should_save_checkpoint():
+                            self.save_checkpoint()
+
+            self.do_optimization()
+            self.do_evaluation()
+            if self.should_save_checkpoint():
+                self.save_checkpoint()
 
     @staticmethod
     def iterable_to_device(iterable, device):
@@ -190,7 +213,7 @@ class Trainer:
         self.evaluation_step_log()
         self.sample()
 
-    def should_save_checkpoint(self, *args):
+    def should_save_checkpoint(self):
         if self.state.best_save_metric >= self.state.save_metric:
             return False
         self.state.best_save_metric = self.state.save_metric
@@ -199,7 +222,7 @@ class Trainer:
         )
         return True
 
-    def save_checkpoint(self, *args):
+    def save_checkpoint(self):
         checkpoint = {
             "model": self.model.state_dict(),
             "optimizer": self.optimizer.state_dict(),
@@ -212,30 +235,6 @@ class Trainer:
         print(f"saving checkpoint to {checkpoint_path}")
         torch.save(checkpoint, checkpoint_path)
 
-    def run(self):
-        self.evaluation_step()
-        self.evaluation_step_log()
-        self.sample()
-        # loader = DataLoader(self.data.train, batch_size=None, shuffle=True)
-        loader = self.data.train_loader()
-        for epoch in range(self.config.epoch):
-            self.state.epoch = epoch
-            for step, data in enumerate(loader):
-                # looks ugly but the logic is very easy to read
-                self.state.step = step + 1
-                self.do_step(data)
-                if self.should_optimize():
-                    self.do_optimization()
-                    if self.should_evaluate():
-                        self.do_evaluation()
-                        if self.should_save_checkpoint():
-                            self.save_checkpoint()
-
-            self.do_optimization()
-            self.do_evaluation()
-            if self.should_save_checkpoint():
-                self.save_checkpoint()
-
-    def do_step(self, data):
+    def do_forward_backward_step(self, data):
         data = self.iterable_to_device(data, self.device)
         self.forward_backward_step(data)

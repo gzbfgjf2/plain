@@ -1,10 +1,7 @@
 import torch.nn as nn
 from torch.nn import functional as F
-from plain.nn.attention_layer import (
-    CausalSelfAttention,
-    EncoderDecoderAttention,
-)
 from plain.nn.layer import LayerNorm, MLP
+from plain.nn.attention import CausalSelfAttention, Attention
 
 
 class DecoderLayer(nn.Module):
@@ -16,7 +13,7 @@ class DecoderLayer(nn.Module):
         self.ln_3 = LayerNorm(config.n_embd, bias=config.bias)
 
         self.causal_self_attention = CausalSelfAttention(config)
-        self.encoder_decoder_attention = EncoderDecoderAttention(config)
+        self.encoder_decoder_attention = Attention(config)
         self.mlp = MLP(config)
 
     def forward(self, word_memory_batches, x):

@@ -3,21 +3,12 @@ import torch.nn as nn
 from torch.nn import functional as F
 from plain.nn import (
     LayerNorm,
-    MLP,
+    Mlp,
     CausalSelfAttention,
-    EncoderDecoderAttention,
-    SelfAttention,
-    Attention,
 )
-from plain.nn.functional import (
-    causal_mask,
-    attention_forward,
-)
-
-# from transformers import GPT2LMHeadModel
 
 import math
-from plain.model.mixins.optimizer import OptimizerMixin
+from .mixins.optimizer import OptimizerMixin
 
 
 class Block(nn.Module):
@@ -26,7 +17,7 @@ class Block(nn.Module):
         self.ln_1 = LayerNorm(config.d, bias=config.bias)
         self.ln_2 = LayerNorm(config.d, bias=config.bias)
         self.attention = CausalSelfAttention(config)
-        self.mlp = MLP(config)
+        self.mlp = Mlp(config)
 
     def forward(self, x):
         x = x + self.attention(self.ln_1(x))

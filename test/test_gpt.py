@@ -1,5 +1,5 @@
 import unittest
-from plain.model.gpt import GPT as Model
+from plain.nn.gpt import GPT as Model
 from plain.train import load_config_dict, init_config_object
 import torch
 

@@ -13,3 +13,6 @@ Minimise source code size. Trade flexibility for simpleness of source code.
 Researchers: change source code
 beginners: understand source code
 
+
+
+All needed within a single file.

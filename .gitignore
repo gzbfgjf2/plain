@@ -3,3 +3,4 @@ dist
 plain.egg-info
 __pycache__
 build
+snippet
