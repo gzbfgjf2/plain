@@ -50,6 +50,7 @@ class Sampler:
         self.model.eval()
         while True:
             ids = self.data.get_data_for_sampling()
+            ids = ids.to(self.device)
             prediction = self.model.sample(ids)
             print("input")
             print(self.data.decode(ids))
