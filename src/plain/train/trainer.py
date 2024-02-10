@@ -92,7 +92,6 @@ class Trainer:
             self.config.experiment_name + ".ckpt"
         )
         self.checkpoint = torch.load(checkpoint_path, map_location=self.device)
-        print(self.checkpoint.keys())
 
     def init_state(self):
         self.state = SimpleNamespace()
@@ -158,17 +157,20 @@ class Trainer:
         loader = self.data.valuation_loader()
         for i, data in enumerate(loader):
             data = self.iterable_to_device(data, self.device)
-            input, output = data
-            prediction = self.model.sample(input)
-            print("input")
-            print(self.data.decode(input))
-            print("expected output")
-            print(self.data.decode(output))
-            print("real output")
-            print(self.data.decode(prediction))
+            input_, label = data
+            prediction = self.model.sample(input_)
+            self.sample_log(input_, label, prediction)
             if i == self.config.n_sample:
                 break
         self.model.train()
+
+    def sample_log(self, input_, label, prediction):
+        print("input")
+        print(self.data.decode(input_))
+        print("expected output")
+        print(self.data.decode(label))
+        print("real output")
+        print(self.data.decode(prediction))
 
     @torch.no_grad()
     def evaluation_step(self):
