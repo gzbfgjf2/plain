@@ -119,7 +119,10 @@ class Trainer:
             self.optimizer.load_state_dict(self.checkpoint["optimizer"])
 
     def forward_backward_step(self, data):
-        _, loss = self.model.training_step(data)
+        with torch.autocast(
+            device_type=self.config.device, dtype=torch.bfloat16
+        ):
+            _, loss = self.model.training_step(data)
         self.state.train_loss = round(loss.item(), 3)
         self.state.loss = loss / self.config.gradient_accumulation_steps
         self.state.loss.backward()
