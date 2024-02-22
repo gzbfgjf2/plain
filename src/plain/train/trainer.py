@@ -5,7 +5,7 @@ import tomli
 import json
 from collections import namedtuple
 from pathlib import Path
-import os
+import sys
 
 RJUST_WIDTH = 20
 
@@ -243,3 +243,10 @@ class Trainer:
     def do_forward_backward_step(self, data):
         data = self.iterable_to_device(data, self.device)
         self.forward_backward_step(data)
+
+
+def run_training(data_class, model_class):
+    config_file_path = sys.argv[2]
+    config_dict = load_config_dict(config_file_path)
+    t = Trainer(config_dict, data_class, model_class)
+    t.run()

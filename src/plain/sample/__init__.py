@@ -6,6 +6,8 @@ import tomli
 import json
 from collections import namedtuple
 from pathlib import Path
+import sys
+from plain.train import load_config_dict
 
 
 class Sampler:
@@ -57,3 +59,10 @@ class Sampler:
             print("real output")
             print(self.data.decode(prediction))
         self.model.train()
+
+
+def sample(data_class, model_class):
+    config_file_path = sys.argv[2]
+    config_dict = load_config_dict(config_file_path)
+    t = Sampler(config_dict, data_class, model_class)
+    t.sample()
