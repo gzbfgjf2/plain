@@ -51,12 +51,14 @@ class Trainer:
         self.config_dict = config_dict
         self.config = init_config_object(self.config_dict)
         self.device = self.config.device
-        self.load_checkpoint()
         self.init_state()
         self.data = data_class(self.config)
         self.model_class = model_class
-        self.init_model()
+        # self.init_model()
+        self.model = self.model_class().to(self.device)
+        # self.load_checkpoint()
         self.init_optimizer()
+        del self.checkpoint
 
     def run(self):
         self.evaluation_step()
@@ -103,15 +105,15 @@ class Trainer:
         self.state.optimization_step = 0
         self.state.best_save_metric = -float("inf")
 
-    def init_model(self):
-        model = self.model_class(self.config)
-        if self.config.init_from == "pretrained":
-            model.copy_pretrained()
-        elif self.config.init_from == "checkpoint":
-            model.load_checkpoint(self.checkpoint["model"])
-        self.model = model.to(self.device)
-        if self.config.freeze:
-            self.model.freeze()
+    # def init_model(self):
+    #     model = self.model_class(self.config)
+    #     if self.config.init_from == "pretrained":
+    #         model.copy_pretrained()
+    #     elif self.config.init_from == "checkpoint":
+    #         model.load_checkpoint(self.checkpoint["model"])
+    #     self.model = model.to(self.device)
+    #     if self.config.freeze:
+    #         self.model.freeze()
 
     def init_optimizer(self):
         self.optimizer = self.model.create_optimizer()

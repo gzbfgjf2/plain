@@ -61,7 +61,7 @@ class Sampler:
         self.model.train()
 
 
-def sample(data_class, model_class):
+def run_sampling(data_class, model_class):
     config_file_path = sys.argv[2]
     config_dict = load_config_dict(config_file_path)
     t = Sampler(config_dict, data_class, model_class)
