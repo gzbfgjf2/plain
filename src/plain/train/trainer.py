@@ -64,7 +64,7 @@ class Trainer:
     def run(self):
         self.evaluation_step()
         self.evaluation_step_log()
-        self.sample()
+        # self.sample()
         loader = self.data.train_loader()
         for epoch in range(self.config.epoch):
             self.state.epoch = epoch
@@ -157,26 +157,26 @@ class Trainer:
     def should_evaluate(self):
         return (self.state.optimization_step) % self.config.eval_interval == 0
 
-    @torch.no_grad()
-    def sample(self):
-        self.model.eval()
-        loader = self.data.valuation_loader()
-        for i, data in enumerate(loader):
-            data = self.iterable_to_device(data, self.device)
-            input_, label = data
-            prediction = self.model.sample(input_)
-            self.sample_log(input_, label, prediction)
-            if i == self.config.n_sample:
-                break
-        self.model.train()
-
-    def sample_log(self, input_, label, prediction):
-        print("input")
-        print(self.data.decode(input_))
-        print("expected output")
-        print(self.data.decode(label))
-        print("real output")
-        print(self.data.decode(prediction))
+    # @torch.no_grad()
+    # def sample(self):
+    #     self.model.eval()
+    #     loader = self.data.valuation_loader()
+    #     for i, data in enumerate(loader):
+    #         data = self.iterable_to_device(data, self.device)
+    #         input_, label = data
+    #         prediction = self.model.sample(input_)
+    #         self.sample_log(input_, label, prediction)
+    #         if i == self.config.n_sample:
+    #             break
+    #     self.model.train()
+    #
+    # def sample_log(self, input_, label, prediction):
+    #     print("input")
+    #     print(self.data.decode(input_))
+    #     print("expected output")
+    #     print(self.data.decode(label))
+    #     print("real output")
+    #     print(self.data.decode(prediction))
 
     @torch.no_grad()
     def evaluation_step(self):
@@ -219,7 +219,7 @@ class Trainer:
     def do_evaluation(self):
         self.evaluation_step()
         self.evaluation_step_log()
-        self.sample()
+        # self.sample()
 
     def should_save_checkpoint(self):
         if self.state.best_save_metric >= self.state.save_metric:
