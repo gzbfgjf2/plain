@@ -55,7 +55,7 @@ class Trainer:
         self.data = data_class(self.config)
         self.model_class = model_class
         # self.init_model()
-        self.model = self.model_class().to(self.device)
+        self.model = self.model_class(self.config).to(self.device)
         # self.load_checkpoint()
         self.init_optimizer()
         del self.checkpoint
