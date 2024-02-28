@@ -51,13 +51,13 @@ class Trainer:
         self.config_dict = config_dict
         self.config = init_config_object(self.config_dict)
         self.device = self.config.device
+        self.checkpoint = None
+        self.load_checkpoint()
         self.init_state()
         self.data = data_class(self.config)
         self.model_class = model_class
         # self.init_model()
         self.model = self.model_class(self.config).to(self.device)
-        self.checkpoint = None
-        self.load_checkpoint()
         self.init_optimizer()
         del self.checkpoint
 
