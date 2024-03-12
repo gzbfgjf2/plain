@@ -89,9 +89,12 @@ class Trainer:
         return tuple(x.to(device) for x in iterable)
 
     def load_checkpoint(self):
-        checkpoint_path = Path("checkpoint") / (
-            self.config.experiment_name + ".ckpt"
-        )
+        # checkpoint_path = Path("checkpoint") / (
+        #     self.config.experiment_name + ".ckpt"
+        # )
+        experiment_path = Path(sys.argv[2])
+        checkpoint_path = experiment_path / "checkpoint.ckpt"
+
         # why cpu
         # https://github.com/pytorch/pytorch/issues/7415#issuecomment-693424574
         if checkpoint_path.exists():

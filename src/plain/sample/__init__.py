@@ -26,9 +26,8 @@ class Sampler:
         return tuple(x.to(device) for x in iterable)
 
     def load_checkpoint(self):
-        checkpoint_path = Path("checkpoint") / (
-            self.config.experiment_name + ".ckpt"
-        )
+        experiment_path = Path(sys.argv[2])
+        checkpoint_path = experiment_path / "checkpoint.ckpt"
         self.checkpoint = torch.load(checkpoint_path, map_location=self.device)
 
     def init_state(self):
