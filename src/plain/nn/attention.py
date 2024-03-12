@@ -18,8 +18,8 @@ def scaled_dot_product_attention(q, k, v, dropout, mask):
         att = att.masked_fill(mask[:, :, :s, :s] == 0, float("-inf"))
     att = F.softmax(att, dim=-1)
     att = dropout(att)
-    y = att @ v
-    return y
+    x = att @ v
+    return x
 
 
 def head_split(tensor, b, s, n_head, head_d):
@@ -38,12 +38,12 @@ def attention_forward(layer, state_for_value, state_for_query):
     k = head_split(k, *args)
     v = head_split(v, *args)
 
-    y = scaled_dot_product_attention(
+    x = scaled_dot_product_attention(
         q, k, v, layer.attention_dropout, layer.mask
     )
-    y = y.transpose(1, 2).contiguous().view(b, s, d)
-    y = layer.residue_dropout(layer.projection(y))
-    return y
+    x = x.transpose(1, 2).contiguous().view(b, s, d)
+    x = layer.residue_dropout(layer.projection(x))
+    return x
 
 
 class AttentionIngredient(nn.Module):

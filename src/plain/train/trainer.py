@@ -39,6 +39,7 @@ def load_config_dict(path):
 def init_config_object(config_dict):
     # https://stackoverflow.com/a/34997118/17749529
     # https://stackoverflow.com/a/15882327/17749529
+    # dictionary to object for dot access
     # namedtuple for immutability
     return json.loads(
         json.dumps(config_dict),
@@ -51,15 +52,13 @@ class Trainer:
         self.config_dict = config_dict
         self.config = init_config_object(self.config_dict)
         self.device = self.config.device
-        self.checkpoint = None
         self.load_checkpoint()
         self.init_state()
         self.data = data_class(self.config)
-        self.model_class = model_class
-        # self.init_model()
-        self.model = self.model_class(self.config).to(self.device)
+        model = model_class(self.config)
+        self.model = model.to(self.device)
         self.init_optimizer()
-        del self.checkpoint
+        # free memory
 
     def run(self):
         self.evaluation_step()
@@ -71,16 +70,17 @@ class Trainer:
             for step, data in enumerate(loader):
                 # looks ugly but the logic is very easy to read
                 self.state.step = step + 1
-                self.do_forward_backward_step(data)
+                data = self.iterable_to_device(data, self.device)
+                self.forward_backward_step(data)
                 if self.should_optimize():
-                    self.do_optimization()
+                    self.optimize()
                     if self.should_evaluate():
-                        self.do_evaluation()
+                        self.evaluate()
                         if self.should_save_checkpoint():
                             self.save_checkpoint()
 
-            self.do_optimization()
-            self.do_evaluation()
+            self.optimize()
+            self.evaluate()
             if self.should_save_checkpoint():
                 self.save_checkpoint()
 
@@ -89,16 +89,17 @@ class Trainer:
         return tuple(x.to(device) for x in iterable)
 
     def load_checkpoint(self):
-        if not self.config.init_from == "checkpoint":
-            return
         checkpoint_path = Path("checkpoint") / (
             self.config.experiment_name + ".ckpt"
         )
-        self.checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        # why cpu
+        # https://github.com/pytorch/pytorch/issues/7415#issuecomment-693424574
+        if checkpoint_path.exists():
+            self.checkpoint = torch.load(checkpoint_path, map_location="cpu")
 
     def init_state(self):
         self.state = SimpleNamespace()
-        if self.config.init_from == "checkpoint":
+        if hasattr(self, "checkpoint"):
             self.state = self.checkpoint["state"]
             return
         self.state.step = 0
@@ -150,7 +151,7 @@ class Trainer:
             vals.append(getattr(self.state, k))
         state_log.log(keys, vals)
 
-    def do_optimization(self):
+    def optimize(self):
         self.optimize_step()
         self.optimize_step_log()
 
@@ -181,7 +182,7 @@ class Trainer:
     @torch.no_grad()
     def evaluation_step(self):
         self.model.eval()
-        loader = self.data.valuation_loader()
+        loader = self.data.validation_loader()
         losses = torch.zeros(self.config.eval_iters)
         self.state.eval_predictions = []
         self.state.eval_labels = []
@@ -189,13 +190,12 @@ class Trainer:
             data = self.iterable_to_device(data, self.device)
             prediction, eval_loss = self.model.evaluation_step(data)
             losses[i] = eval_loss
-            *_, label = data
-            self.state.eval_labels.append(label)
+            self.state.eval_labels.append(data)
             self.state.eval_predictions.append(prediction)
             if i == self.config.eval_iters - 1:
                 break
         self.state.metric = self.data.get_metrics(
-            self.state.eval_labels, self.state.eval_predictions
+            self.state.eval_predictions, self.state.eval_labels
         )
         self.state.eval_loss = round(losses.mean().item(), 4)
         self.handle_save_metric()
@@ -216,7 +216,7 @@ class Trainer:
             vals.append(getattr(self.state, k))
         state_log.log(keys, vals)
 
-    def do_evaluation(self):
+    def evaluate(self):
         self.evaluation_step()
         self.evaluation_step_log()
         # self.sample()
@@ -237,19 +237,17 @@ class Trainer:
             "state": self.state,
         }
 
-        checkpoint_path = Path("checkpoint") / (
-            self.config.experiment_name + ".ckpt"
+        checkpoint_path = (
+            "experiments/" + self.config.experiment_name + "/checkpoint.ckpt"
         )
         print(f"saving checkpoint to {checkpoint_path}")
         torch.save(checkpoint, checkpoint_path)
 
-    def do_forward_backward_step(self, data):
-        data = self.iterable_to_device(data, self.device)
-        self.forward_backward_step(data)
+    # def do_forward_backward_step(self, data):
+    #     data = self.iterable_to_device(data, self.device)
+    #     self.forward_backward_step(data)
 
 
-def run_training(data_class, model_class):
-    config_file_path = sys.argv[2]
-    config_dict = load_config_dict(config_file_path)
+def run_training(config_dict, data_class, model_class):
     t = Trainer(config_dict, data_class, model_class)
     t.run()
